@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sky Track Sandbox</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1016;
+        --panel: rgba(12, 18, 26, 0.92);
+        --text: #e8eef6;
+        --muted: #8b9bb0;
+        --accent: #6db3f2;
+        --line: rgba(255, 255, 255, 0.08);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; height: 100%; overflow: hidden;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background: var(--bg); color: var(--text);
+      }
+      #canvas-wrap { position: absolute; inset: 0; }
+      canvas { display: block; width: 100%; height: 100%; }
+
+      .hud {
+        position: absolute; top: 10px; left: 10px; z-index: 2;
+        width: min(540px, calc(100vw - 390px));
+        padding: 8px 10px;
+        background: var(--panel); border: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+        overflow: visible;
+      }
+      .hud h1 { margin: 0; font-size: 0.92rem; font-weight: 600; display: inline; }
+      .hud .phase {
+        display: inline; margin-left: 8px; color: var(--accent); font-size: 0.72rem;
+      }
+      .hud .lead {
+        margin: 3px 0 6px; color: var(--muted); font-size: 0.68rem; line-height: 1.25;
+      }
+      .hud-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 10px;
+        align-items: start;
+      }
+      .panel-label {
+        margin: 0 0 3px; font-size: 0.62rem; letter-spacing: 0.04em;
+        text-transform: uppercase; color: var(--muted);
+      }
+      .hud dl, .truth-box dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0 8px;
+        font-size: 0.68rem;
+        line-height: 1.28;
+      }
+      .hud dt, .truth-box dt { color: var(--muted); white-space: nowrap; }
+      .hud dd, .truth-box dd {
+        margin: 0; font-variant-numeric: tabular-nums;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .truth-box {
+        margin: 0; padding: 5px 7px;
+        border: 1px solid rgba(224, 138, 154, 0.35);
+        background: rgba(224, 138, 154, 0.08);
+      }
+      .truth-box .truth-title {
+        margin: 0 0 2px; font-size: 0.62rem; letter-spacing: 0.04em;
+        text-transform: uppercase; color: #e08a9a;
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      }
+      .verify-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 1px 6px;
+        border: 1px solid var(--line);
+        font-size: 0.65rem;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .verify-badge.ok {
+        border-color: rgba(125, 206, 160, 0.55);
+        color: #7dcea0;
+        background: rgba(125, 206, 160, 0.1);
+      }
+      .verify-badge.bad {
+        border-color: rgba(224, 138, 154, 0.45);
+        color: #e08a9a;
+        background: rgba(224, 138, 154, 0.08);
+      }
+      .verify-badge .mark {
+        font-size: 0.85rem; font-weight: 700; line-height: 1;
+      }
+      .truth-box .truth-warn { display: none; }
+
+      .monitor {
+        position: absolute; top: 10px; right: 10px; z-index: 2;
+        width: min(350px, calc(100vw - 24px));
+        background: var(--panel); border: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+        overflow: visible;
+      }
+      .monitor-header { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+      .monitor-header h2 { margin: 0; font-size: 0.88rem; font-weight: 600; display: inline; }
+      .monitor-header .sub {
+        display: inline; margin-left: 8px; color: var(--muted); font-size: 0.65rem;
+      }
+      .monitor-stats {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;
+        padding: 5px 8px; border-bottom: 1px solid var(--line);
+      }
+      .monitor-stats .stat {
+        padding: 3px 5px; background: rgba(255,255,255,0.03); border: 1px solid var(--line);
+      }
+      .monitor-stats .stat .k {
+        display: block; color: var(--muted); font-size: 0.58rem;
+        text-transform: uppercase; letter-spacing: 0.03em;
+      }
+      .monitor-stats .stat .v {
+        font-size: 0.88rem; font-variant-numeric: tabular-nums; font-weight: 600;
+      }
+      .monitor-stats .stat .v.ok { color: #7dcea0; }
+      .track-scroll { overflow: visible; }
+      .track-table {
+        width: 100%; border-collapse: collapse;
+        font-size: 0.66rem; font-variant-numeric: tabular-nums;
+      }
+      .track-table th {
+        color: var(--muted); font-weight: 500; text-align: left;
+        padding: 3px 5px; border-bottom: 1px solid var(--line); white-space: nowrap;
+      }
+      .track-table td {
+        padding: 3px 5px; border-bottom: 1px solid rgba(255,255,255,0.04); white-space: nowrap;
+      }
+      .empty-tracks {
+        padding: 8px; text-align: center; color: var(--muted); font-size: 0.68rem; line-height: 1.3;
+      }
+      .empty-tracks strong {
+        display: block; color: var(--text); font-weight: 500; margin-bottom: 2px;
+      }
+      .monitor-footer {
+        padding: 4px 8px; border-top: 1px solid var(--line);
+        color: var(--muted); font-size: 0.6rem;
+      }
+
+      .label3d {
+        color: #d7e2ef; font-size: 12px; font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+        pointer-events: none; user-select: none;
+      }
+      .label3d.muted { color: #9aabbd; font-size: 11px; }
+      .hint {
+        position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+        z-index: 2; color: var(--muted); font-size: 0.7rem; pointer-events: none;
+      }
+      .error {
+        position: absolute; inset: 20px; z-index: 5; display: none;
+        align-items: center; justify-content: center; text-align: center;
+        background: rgba(10,16,24,0.92); color: #e08a9a; padding: 24px;
+      }
+
+      @media (max-width: 1100px) {
+        .hud { width: min(420px, calc(100vw - 24px)); }
+        .hud-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvas-wrap"></div>
+    <div class="error" id="boot-error"></div>
+    <aside class="hud">
+      <h1>Sky Track</h1>
+      <p class="phase">tracking · x,y,z</p>
+      <p class="lead">Pi HQ + 16 mm · orbit in 1 km² · climb & descend · truth private from tracker</p>
+      <div class="hud-grid">
+        <div>
+          <p class="panel-label">Cameras / coverage</p>
+          <dl>
+            <dt>Camera</dt>
+            <dd id="cam-name">…</dd>
+            <dt>Cost / corner</dt>
+            <dd id="cam-cost">…</dd>
+            <dt>Cost / 4</dt>
+            <dd id="cam-cost4">…</dd>
+            <dt>Lens</dt>
+            <dd id="cam-market">…</dd>
+            <dt>H / V / D</dt>
+            <dd id="cam-fov">…</dd>
+            <dt>Resolution</dt>
+            <dd id="cam-res">…</dd>
+            <dt>fx / fy</dt>
+            <dd id="cam-f">…</dd>
+            <dt>Slice</dt>
+            <dd id="cov-slice">…</dd>
+            <dt>Blind</dt>
+            <dd id="cov-blind">…</dd>
+            <dt>1 cam</dt>
+            <dd id="cov-one">…</dd>
+            <dt>2+</dt>
+            <dd id="cov-two">…</dd>
+            <dt>Detect band</dt>
+            <dd id="detect-band">…</dd>
+          </dl>
+        </div>
+        <div class="truth-box">
+          <p class="truth-title">
+            <span>Operator truth — private</span>
+            <span class="verify-badge" id="verify-badge" title="Operator check outside the tracker: compares truth XYZ to track XYZ">
+              <span class="mark" id="verify-mark">·</span>
+              <span id="verify-text">checking</span>
+            </span>
+          </p>
+          <p class="truth-warn">Not sent to tracker.</p>
+          <dl>
+            <dt>ID</dt><dd id="truth-id">—</dd>
+            <dt>Model</dt><dd id="truth-model">—</dd>
+            <dt>Type</dt><dd id="truth-type">—</dd>
+            <dt>X</dt><dd id="truth-x">—</dd>
+            <dt>Y</dt><dd id="truth-y">—</dd>
+            <dt>Z</dt><dd id="truth-z">—</dd>
+            <dt>Span/len</dt><dd id="truth-size">—</dd>
+            <dt>Speed</dt><dd id="truth-speed">—</dd>
+            <dt>Wingspan px</dt><dd id="truth-px">—</dd>
+            <dt>Seen by</dt><dd id="truth-seen">…</dd>
+            <dt>Track err</dt><dd id="track-error">—</dd>
+          </dl>
+        </div>
+      </div>
+    </aside>
+    <aside class="monitor" aria-label="Sky object monitor">
+      <div class="monitor-header">
+        <h2>Sky Monitor</h2>
+        <p class="sub">Tracker view — no access to operator truth</p>
+      </div>
+      <div class="monitor-stats">
+        <div class="stat"><span class="k">Tracked</span><span class="v" id="stat-tracked">0</span></div>
+        <div class="stat"><span class="k">Cameras</span><span class="v ok" id="stat-cameras">4/4</span></div>
+        <div class="stat"><span class="k">Selected</span><span class="v" id="stat-selected">—</span></div>
+      </div>
+      <div class="track-scroll">
+        <table class="track-table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Type</th><th>X</th><th>Y</th><th>Z</th><th>Speed</th><th>Cams</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="track-body"></tbody>
+        </table>
+        <div class="empty-tracks" id="empty-tracks">
+          <strong>Tracker has no objects</strong>
+          Truth exists for the operator only. This panel shows estimates once triangulation runs.
+        </div>
+      </div>
+      <div class="monitor-footer">
+        Coordinates in metres · origin at centre · Y = altitude AGL
+      </div>
+    </aside>
+    <div class="hint">Drag to orbit · scroll to zoom · right-drag to pan</div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+
+      const wrap = document.getElementById("canvas-wrap");
+      const bootError = document.getElementById("boot-error");
+
+      function showError(msg) {
+        bootError.style.display = "flex";
+        bootError.textContent = msg;
+      }
+
+      function makeLabel(text, className = "label3d") {
+        const el = document.createElement("div");
+        el.className = className;
+        el.textContent = text;
+        return new CSS2DObject(el);
+      }
+
+      // --- Pinhole helpers (match Python OpenCV convention) ---
+      function matVec(R, v) {
+        return new THREE.Vector3(
+          R[0][0] * v.x + R[0][1] * v.y + R[0][2] * v.z,
+          R[1][0] * v.x + R[1][1] * v.y + R[1][2] * v.z,
+          R[2][0] * v.x + R[2][1] * v.y + R[2][2] * v.z
+        );
+      }
+
+      function transpose(R) {
+        return [
+          [R[0][0], R[1][0], R[2][0]],
+          [R[0][1], R[1][1], R[2][1]],
+          [R[0][2], R[1][2], R[2][2]],
+        ];
+      }
+
+      function projectPoint(intr, R, center, point) {
+        const d = point.clone().sub(center);
+        const pCam = matVec(transpose(R), d);
+        if (pCam.z <= 1e-6) return null;
+        const u = intr.fx * (pCam.x / pCam.z) + intr.cx;
+        const v = intr.fy * (pCam.y / pCam.z) + intr.cy;
+        return { u, v, depth: pCam.z };
+      }
+
+      function isVisible(intr, R, center, point) {
+        const p = projectPoint(intr, R, center, point);
+        if (!p) return false;
+        return p.u >= 0 && p.u < intr.width_px && p.v >= 0 && p.v < intr.height_px;
+      }
+
+      async function main() {
+        const res = await fetch("/api/sim_config.json", { cache: "no-store" });
+        if (!res.ok) throw new Error(`sim_config HTTP ${res.status}`);
+        const cfg = await res.json();
+        if (cfg.error) throw new Error(cfg.error);
+
+        const SIZE = cfg.world.size_m;
+        const HALF = SIZE / 2;
+        const GRID = cfg.world.grid_step_m;
+        const model = cfg.camera_model;
+        const truth = cfg.operator_truth;
+
+        document.getElementById("cam-name").textContent = model.name;
+        document.getElementById("cam-cost").textContent = model.price_band;
+        document.getElementById("cam-cost4").textContent =
+          model.price_four_corners_band || "—";
+        document.getElementById("cam-market").textContent =
+          `${model.focal_length_mm} mm · look UP (${model.tilt_from_zenith_deg}° from zenith)`;
+        document.getElementById("cam-fov").textContent =
+          `${model.derived_hfov_deg}° / ${model.derived_vfov_deg}° / ${model.derived_dfov_deg}°`;
+        document.getElementById("cam-res").textContent =
+          `${model.intrinsics.width_px} × ${model.intrinsics.height_px}`;
+        document.getElementById("cam-f").textContent =
+          `${model.intrinsics.fx.toFixed(0)} / ${model.intrinsics.fy.toFixed(0)} px`;
+
+        document.getElementById("truth-id").textContent = truth.id;
+        document.getElementById("truth-model").textContent = truth.model || "—";
+        document.getElementById("truth-type").textContent = truth.type;
+        document.getElementById("truth-x").textContent = `${truth.x} m`;
+        document.getElementById("truth-y").textContent = `${truth.y.toFixed(0)} m`;
+        document.getElementById("truth-z").textContent = `${truth.z} m`;
+        const af0 = truth.airframe || {};
+        document.getElementById("truth-size").textContent =
+          `${af0.wingspan_m ?? "—"} m / ${af0.length_m ?? "—"} m`;
+        document.getElementById("truth-speed").textContent =
+          `${(truth.speed_mps ?? 0).toFixed(1)} m/s  (${truth.speed_kmh ?? "—"} km/h)`;
+        document.getElementById("truth-px").textContent =
+          truth.mean_wingspan_px == null
+            ? "—"
+            : `~${truth.mean_wingspan_px} px mean`;
+        document.getElementById("truth-seen").textContent =
+          (truth.seen_by_corners && truth.seen_by_corners.length)
+            ? truth.seen_by_corners.join(", ")
+            : "NONE — blind";
+
+        const env = cfg.detection_envelope_tb2;
+        if (env) {
+          document.getElementById("detect-band").textContent = env.summary_m;
+        }
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a121c);
+        scene.fog = new THREE.Fog(0x0a121c, 8000, 22000);
+
+        const camera = new THREE.PerspectiveCamera(
+          50, window.innerWidth / window.innerHeight, 1, 30000
+        );
+        // Pull back so the 1 km² ground and high TB2 stay in view
+        camera.position.set(1800, 2200, 1800);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        wrap.appendChild(renderer.domElement);
+
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = "absolute";
+        labelRenderer.domElement.style.inset = "0";
+        labelRenderer.domElement.style.pointerEvents = "none";
+        wrap.appendChild(labelRenderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.maxPolarAngle = Math.PI * 0.49;
+        controls.minDistance = 80;
+        controls.maxDistance = 15000;
+        controls.target.set(0, 400, 0);
+        controls.update();
+
+        scene.add(new THREE.AmbientLight(0xd8e4f0, 0.55));
+        const sun = new THREE.DirectionalLight(0xfff2dd, 0.95);
+        sun.position.set(400, 900, 200);
+        scene.add(sun);
+
+        // Ground
+        const ground = new THREE.Mesh(
+          new THREE.PlaneGeometry(SIZE, SIZE),
+          new THREE.MeshStandardMaterial({ color: 0x2a3a2e, roughness: 0.92 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        const grid = new THREE.GridHelper(SIZE, SIZE / GRID, 0x6a8aa0, 0x3d5244);
+        grid.position.y = 0.15;
+        scene.add(grid);
+
+        scene.add(
+          new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(-HALF, 0.4, -HALF),
+              new THREE.Vector3(HALF, 0.4, -HALF),
+              new THREE.Vector3(HALF, 0.4, HALF),
+              new THREE.Vector3(-HALF, 0.4, HALF),
+              new THREE.Vector3(-HALF, 0.4, -HALF),
+            ]),
+            new THREE.LineBasicMaterial({ color: 0xb7d0e6 })
+          )
+        );
+
+        const axes = new THREE.AxesHelper(120);
+        axes.position.y = 0.5;
+        scene.add(axes);
+
+        const colors = {
+          SW: 0x5eb1ff, SE: 0x7dcea0, NE: 0xf0b45a, NW: 0xe08a9a,
+        };
+
+        const bodyMat = new THREE.MeshStandardMaterial({
+          color: 0x2c333c, roughness: 0.45, metalness: 0.35,
+        });
+
+        const camRigs = cfg.cameras.map((c) => {
+          const center = new THREE.Vector3(...c.position_m);
+          const R = c.R_world_cam;
+          const intr = c.intrinsics;
+          const look = new THREE.Vector3(...c.look_dir);
+
+          const group = new THREE.Group();
+          group.position.copy(center);
+
+          const pole = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.6, 2.0, center.y, 10),
+            new THREE.MeshStandardMaterial({ color: 0x6d757f, roughness: 0.7 })
+          );
+          pole.position.y = -center.y / 2;
+          group.add(pole);
+
+          const q = new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, 0, 1),
+            look.clone().normalize()
+          );
+          const body = new THREE.Group();
+          body.quaternion.copy(q);
+          body.add(new THREE.Mesh(new THREE.BoxGeometry(8, 5, 10), bodyMat));
+          const lens = new THREE.Mesh(
+            new THREE.CylinderGeometry(2.2, 2.2, 3, 16),
+            new THREE.MeshStandardMaterial({
+              color: 0x1a6fa8, roughness: 0.2, metalness: 0.6,
+              emissive: 0x0a3048, emissiveIntensity: 0.4,
+            })
+          );
+          lens.rotation.x = Math.PI / 2;
+          lens.position.z = 8;
+          body.add(lens);
+
+          // Exact image-corner frustum from Python config
+          const tip = center.clone();
+          const corners = c.frustum_corners_m.map((p) => new THREE.Vector3(...p));
+          const positions = [];
+          for (let i = 0; i < 4; i++) {
+            const a = corners[i];
+            const b = corners[(i + 1) % 4];
+            positions.push(tip.x, tip.y, tip.z, a.x, a.y, a.z);
+            positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+          }
+          const lineGeom = new THREE.BufferGeometry();
+          lineGeom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+          scene.add(
+            new THREE.LineSegments(
+              lineGeom,
+              new THREE.LineBasicMaterial({
+                color: colors[c.corner], transparent: true, opacity: 0.85,
+              })
+            )
+          );
+
+          const volPos = [];
+          for (let i = 0; i < 4; i++) {
+            const a = corners[i];
+            const b = corners[(i + 1) % 4];
+            volPos.push(tip.x, tip.y, tip.z, a.x, a.y, a.z, b.x, b.y, b.z);
+          }
+          const volGeom = new THREE.BufferGeometry();
+          volGeom.setAttribute("position", new THREE.Float32BufferAttribute(volPos, 3));
+          scene.add(
+            new THREE.Mesh(
+              volGeom,
+              new THREE.MeshBasicMaterial({
+                color: colors[c.corner], transparent: true, opacity: 0.07,
+                side: THREE.DoubleSide, depthWrite: false,
+              })
+            )
+          );
+
+          group.add(body);
+          const lab = makeLabel(
+            `${c.corner}  ${c.camera_id}  ·  ${model.derived_hfov_deg}°×${model.derived_vfov_deg}°`
+          );
+          lab.position.set(0, 14, 0);
+          group.add(lab);
+          scene.add(group);
+
+          return { ...c, center, R, intr, look };
+        });
+
+        // Operator-only Bayraktar TB2 (true scale; truth never sent to tracker)
+        const af = truth.airframe;
+        const span = af.wingspan_m;
+        const len = af.length_m;
+        const truthGroup = new THREE.Group();
+        scene.add(truthGroup);
+
+        const skin = new THREE.MeshStandardMaterial({
+          color: 0xb7c0c8, roughness: 0.45, metalness: 0.25,
+        });
+        const dark = new THREE.MeshStandardMaterial({
+          color: 0x3a424a, roughness: 0.5, metalness: 0.3,
+        });
+
+        const airframe = new THREE.Group();
+        const fuse = new THREE.Mesh(
+          new THREE.CapsuleGeometry(0.35, len - 0.7, 6, 10), skin
+        );
+        fuse.rotation.x = Math.PI / 2;
+        airframe.add(fuse);
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(span, 0.12, 1.1), skin);
+        wing.position.set(0, 0.05, -0.3);
+        airframe.add(wing);
+        const leftTail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.4, 1.6), skin);
+        leftTail.position.set(-0.55, 0.55, -len * 0.42);
+        leftTail.rotation.z = THREE.MathUtils.degToRad(35);
+        airframe.add(leftTail);
+        const rightTail = leftTail.clone();
+        rightTail.position.x = 0.55;
+        rightTail.rotation.z = THREE.MathUtils.degToRad(-35);
+        airframe.add(rightTail);
+        const prop = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.08, 16), dark);
+        prop.rotation.x = Math.PI / 2;
+        prop.position.set(0, 0, -len * 0.48);
+        airframe.add(prop);
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), dark);
+        ball.position.set(0, -0.45, len * 0.22);
+        airframe.add(ball);
+        truthGroup.add(airframe);
+
+        const drop = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, -1, 0),
+          ]),
+          new THREE.LineDashedMaterial({
+            color: 0xe08a9a, dashSize: 40, gapSize: 30, transparent: true, opacity: 0.65,
+          })
+        );
+        truthGroup.add(drop);
+
+        const mark = new THREE.Mesh(
+          new THREE.RingGeometry(18, 28, 32),
+          new THREE.MeshBasicMaterial({
+            color: 0xe08a9a, side: THREE.DoubleSide, transparent: true, opacity: 0.75,
+          })
+        );
+        mark.rotation.x = -Math.PI / 2;
+        truthGroup.add(mark);
+
+        const truthLab = makeLabel("");
+        truthLab.position.set(0, 25, 0);
+        truthGroup.add(truthLab);
+
+        function updateTruthVisual(tr) {
+          if (!tr) return;
+          truthGroup.position.set(tr.x, tr.y, tr.z);
+          truthGroup.rotation.y = -THREE.MathUtils.degToRad(tr.heading_deg || 0);
+          drop.geometry.setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, -tr.y, 0),
+          ]);
+          drop.computeLineDistances();
+          mark.position.set(0, -tr.y + 0.5, 0);
+          truthLab.element.textContent = tr.id || "";
+
+          document.getElementById("truth-id").textContent = tr.id;
+          document.getElementById("truth-model").textContent = tr.model || "—";
+          document.getElementById("truth-type").textContent = tr.type;
+          document.getElementById("truth-x").textContent = `${Number(tr.x).toFixed(1)} m`;
+          document.getElementById("truth-y").textContent = `${Number(tr.y).toFixed(1)} m`;
+          document.getElementById("truth-z").textContent = `${Number(tr.z).toFixed(1)} m`;
+          const afr = tr.airframe || {};
+          document.getElementById("truth-size").textContent =
+            `${afr.wingspan_m ?? "—"} m / ${afr.length_m ?? "—"} m`;
+          document.getElementById("truth-speed").textContent =
+            `${Number(tr.speed_mps ?? 0).toFixed(1)} m/s  (${tr.speed_kmh ?? "—"} km/h)`;
+        }
+
+        updateTruthVisual(truth);
+
+        // Coverage slice: one textured plane (not thousands of tile meshes)
+        const altY = cfg.coverage.slice_y_m;
+        const cell = cfg.coverage.cell_m;
+        const nCells = Math.floor(SIZE / cell) + 1;
+        const canvas = document.createElement("canvas");
+        canvas.width = nCells;
+        canvas.height = nCells;
+        const ctx = canvas.getContext("2d");
+        const img = ctx.createImageData(nCells, nCells);
+        let blind = 0, one = 0, twoPlus = 0, total = 0;
+
+        for (let iz = 0; iz < nCells; iz++) {
+          for (let ix = 0; ix < nCells; ix++) {
+            const x = -HALF + ix * cell;
+            const z = -HALF + iz * cell;
+            total += 1;
+            const p = new THREE.Vector3(x, altY, z);
+            let n = 0;
+            for (const cam of camRigs) {
+              if (isVisible(cam.intr, cam.R, cam.center, p)) n += 1;
+            }
+            if (n === 0) blind += 1;
+            else if (n === 1) one += 1;
+            else twoPlus += 1;
+
+            let r, g, b, a;
+            if (n === 0) { r = 196; g = 92; b = 106; a = 150; }
+            else if (n === 1) { r = 212; g = 163; b = 92; a = 100; }
+            else { r = 63; g = 143; b = 107; a = 70; }
+            // canvas row 0 is top; map z so +north is top of texture
+            const row = nCells - 1 - iz;
+            const i = (row * nCells + ix) * 4;
+            img.data[i] = r;
+            img.data[i + 1] = g;
+            img.data[i + 2] = b;
+            img.data[i + 3] = a;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.colorSpace = THREE.SRGBColorSpace;
+
+        const covMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(SIZE, SIZE),
+          new THREE.MeshBasicMaterial({
+            map: tex,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          })
+        );
+        covMesh.rotation.x = -Math.PI / 2;
+        covMesh.position.y = altY;
+        scene.add(covMesh);
+
+        const sliceLab = makeLabel(
+          `pinhole coverage @ ${altY} m  ·  red=blind  amber=1  green=2+`
+        );
+        sliceLab.position.set(0, altY + 8, HALF + 40);
+        scene.add(sliceLab);
+
+        document.getElementById("cov-slice").textContent = `y = ${altY} m`;
+        document.getElementById("cov-blind").textContent =
+          `${((100 * blind) / total).toFixed(1)}% (~${((blind * cell * cell) / 1e6).toFixed(2)} km²)`;
+        document.getElementById("cov-one").textContent =
+          `${((100 * one) / total).toFixed(1)}%`;
+        document.getElementById("cov-two").textContent =
+          `${((100 * twoPlus) / total).toFixed(1)}%`;
+
+        // Tracker estimate (from detections only — not operator truth)
+        const estimateGroup = new THREE.Group();
+        scene.add(estimateGroup);
+
+        function drawEstimate(track) {
+          estimateGroup.clear();
+          if (!track) return;
+          const marker = new THREE.Mesh(
+            new THREE.SphereGeometry(18, 16, 12),
+            new THREE.MeshBasicMaterial({
+              color: 0x6db3f2,
+              transparent: true,
+              opacity: 0.85,
+            })
+          );
+          marker.position.set(track.x, track.y, track.z);
+          estimateGroup.add(marker);
+
+          const ring = new THREE.Mesh(
+            new THREE.RingGeometry(22, 30, 24),
+            new THREE.MeshBasicMaterial({
+              color: 0x6db3f2,
+              side: THREE.DoubleSide,
+              transparent: true,
+              opacity: 0.7,
+            })
+          );
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(track.x, 0.6, track.z);
+          estimateGroup.add(ring);
+
+          const drop = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(track.x, track.y, track.z),
+              new THREE.Vector3(track.x, 0.6, track.z),
+            ]),
+            new THREE.LineBasicMaterial({ color: 0x6db3f2, transparent: true, opacity: 0.55 })
+          );
+          estimateGroup.add(drop);
+
+          const lab = makeLabel(String(track.id || ""));
+          lab.position.set(track.x, track.y + 40, track.z);
+          estimateGroup.add(lab);
+        }
+
+        const MATCH_TOLERANCE_M = 1.0; // operator verify threshold
+
+        function updateOperatorVerify(score) {
+          const badge = document.getElementById("verify-badge");
+          const mark = document.getElementById("verify-mark");
+          const text = document.getElementById("verify-text");
+          const errEl = document.getElementById("track-error");
+          if (!badge || !mark || !text) return;
+
+          const err = score && score.error_m != null ? Number(score.error_m) : null;
+          if (errEl) {
+            errEl.textContent = err == null ? "—" : `${err.toFixed(2)} m`;
+          }
+
+          badge.classList.remove("ok", "bad");
+          if (err == null || Number.isNaN(err)) {
+            mark.textContent = "·";
+            text.textContent = "no track";
+            return;
+          }
+          if (err <= MATCH_TOLERANCE_M) {
+            badge.classList.add("ok");
+            mark.textContent = "✓";
+            text.textContent = `match ≤ ${MATCH_TOLERANCE_M} m`;
+          } else {
+            badge.classList.add("bad");
+            mark.textContent = "✗";
+            text.textContent = `off ${err.toFixed(1)} m`;
+          }
+        }
+
+        function fmt(n, digits = 1) {
+          if (n == null || Number.isNaN(n)) return "—";
+          return Number(n).toFixed(digits);
+        }
+
+        function renderTracks(tracks = []) {
+          document.getElementById("stat-tracked").textContent = String(tracks.length);
+          const body = document.getElementById("track-body");
+          const empty = document.getElementById("empty-tracks");
+          body.replaceChildren();
+          empty.hidden = tracks.length > 0;
+          if (!tracks.length) {
+            document.getElementById("stat-selected").textContent = "—";
+            drawEstimate(null);
+            return;
+          }
+          const primary = tracks[0];
+          document.getElementById("stat-selected").textContent = primary.id;
+          document.getElementById("stat-cameras").textContent =
+            `${primary.cameras ?? "—"}/4`;
+          drawEstimate(primary);
+
+          for (const t of tracks) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${t.id}</td>
+              <td>${t.type}</td>
+              <td>${fmt(t.x, 1)}</td>
+              <td>${fmt(t.y, 1)}</td>
+              <td>${fmt(t.z, 1)}</td>
+              <td>${fmt(t.speed, 1)}</td>
+              <td>${t.cameras ?? "—"}</td>
+              <td>${t.status || "live"}</td>
+            `;
+            body.appendChild(tr);
+          }
+
+          const score = (cfg.tracker && cfg.tracker.operator_score) || {};
+          updateOperatorVerify(score);
+        }
+
+        window.skyTrackMonitor = { renderTracks };
+        renderTracks((cfg.tracker && cfg.tracker.tracks) || []);
+        updateOperatorVerify((cfg.tracker && cfg.tracker.operator_score) || {});
+
+        // Live motion + tracks (~4 Hz)
+        setInterval(async () => {
+          try {
+            const r = await fetch("/api/tracks.json", { cache: "no-store" });
+            if (!r.ok) return;
+            const payload = await r.json();
+            cfg.tracker = payload;
+            if (payload.operator_truth) {
+              updateTruthVisual(payload.operator_truth);
+            }
+            renderTracks(payload.tracks || []);
+            updateOperatorVerify(payload.operator_score || {});
+          } catch (_) {
+            /* ignore transient errors */
+          }
+        }, 250);
+
+        function onResize() {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+          labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        window.addEventListener("resize", onResize);
+
+        function tick() {
+          controls.update();
+          renderer.render(scene, camera);
+          labelRenderer.render(scene, camera);
+          requestAnimationFrame(tick);
+        }
+        tick();
+      }
+
+      main().catch((err) => {
+        console.error(err);
+        showError(`Failed to load simulation config: ${err.message}. Is the server running?`);
+      });
+    </script>
+  </body>
+</html>

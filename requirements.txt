@@ -1,0 +1,2 @@
+# Core math uses the Python stdlib only (no numpy required for Phase 0–3).
+# Optional later: numpy, opencv-python for calibrated distortion / live capture.
