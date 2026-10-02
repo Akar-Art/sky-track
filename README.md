@@ -1,6 +1,8 @@
 # Sky Track
 
-Multi-camera aerial tracking sandbox (Bayraktar TB2–class targets).
+Multi-camera aerial tracking sandbox for drones/UAV (Bayraktar TB2–class) over a 1 km² area.
+
+Standalone Python + browser simulation. Not part of any other application.
 
 ## Cameras (current)
 
@@ -25,18 +27,42 @@ Multi-camera aerial tracking sandbox (Bayraktar TB2–class targets).
 
 Not included: Raspberry Pi SBC, PoE, enclosure, mast, cabling (~$50–120+ per site).
 
-Optional later: add a cheap wide “cue” cam (~$25–40) beside each track cam.
-
 ## How to run
 
 ```bash
 cd sky-track
 python3 scripts/run_sim.py
+```
+
+Open in a system browser (not an in-IDE preview):
+
+```bash
 xdg-open http://127.0.0.1:8765/
 ```
 
-Config: `http://127.0.0.1:8765/api/sim_config.json`
+- Config: `http://127.0.0.1:8765/api/sim_config.json`
+- Live tracks: `http://127.0.0.1:8765/api/tracks.json`
+
+Coverage CLI:
 
 ```bash
 PYTHONPATH=src python3 scripts/analyze_coverage.py
 ```
+
+## Layout
+
+```
+sky-track/
+  scripts/run_sim.py
+  scripts/analyze_coverage.py
+  src/sky_track/
+    core/     # pinhole camera + triangulation
+    sim/      # world, TB2 motion, projector, scenario
+    viz/      # local dashboard
+```
+
+## Notes
+
+- Operator ground truth is private and never fed into the tracker.
+- Tracker output is estimated `x, y, z` (metres) from multi-view triangulation.
+- Units are metric throughout.
